@@ -1,36 +1,32 @@
-use anyhow::{Context, Result};
-use clap::Parser;
+use std::time::Duration;
+use crossbeam_channel::{bounded, tick, Receiver, select};
+use anyhow::Result;
 
-/// Search for a pattern in a file and display the lines that contain it.
-#[derive(Parser)]
-struct Cli {
-    /// The pattern to look for
-    pattern: String,
-    /// The path to the file to read
-    path: std::path::PathBuf,
+fn ctrl_channel() -> Result<Receiver<()>, ctrlc::Error> {
+    let (sender, receiver) = bounded(100);
+    ctrlc::set_handler(move || {
+        let _ = sender.send(());
+    })?;
+
+    Ok(receiver)
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse();
+    let ctrl_c_events = ctrl_channel()?;
+    let ticks = tick(Duration::from_secs(1));
 
-    let content = std::fs::read_to_string(&args.path)
-        .with_context(|| format!("could not read file `{}`", args.path.display()))?;
-
-        find_matches(&content, &args.pattern, &mut std::io::stdout());
-
-        
-
-    
-
-    Ok(())
-}
-
-fn find_matches(content: &str, pattern: &str, mut writer: impl std::io::Write) {
-    for line in content.lines() {
-        if line.contains(pattern) {
-            if let Err(err) = writeln!(writer, "{}", line) {
-                eprintln!("Error writing line: {}", err);
+    loop {
+        select! {
+            recv(ticks) -> _ => {
+                println!("working!");
+            }
+            recv(ctrl_c_events) -> _ => {
+                println!();
+                println!("Goodbye!");
+                break;
             }
         }
     }
+
+    Ok(())
 }
